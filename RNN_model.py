@@ -48,10 +48,6 @@ class Toy_RNN(nn.Module):
         
         return out.view(-1, self.n_outputs) # batch_size X n_output
     
-    def accuracy(self, x_valid, y_valid):
-        preds = torch.argmax(self.forward(x_valid), dim=1)
-        return (preds == y_valid).float().mean()
-    
     def fit(self, epochs, train_dl):
         loss_array=np.zeros(epochs)
         for epoch in range(epochs):
@@ -64,11 +60,24 @@ class Toy_RNN(nn.Module):
             print(epoch)
         return loss_array
     
+    @staticmethod
+    def get_model(n_steps, n_inputs, n_neurons, n_outputs, loss_func, opt_func, lr):
+        model = Toy_RNN(n_steps, n_inputs, n_neurons, n_outputs)
+        model.opt = opt_func(model.parameters(), lr=lr)
+        model.loss_func = loss_func
+        return model
+    
 
-def get_model(n_steps, n_inputs, n_neurons, n_outputs, loss_func, opt_func, lr):
-    model = Toy_RNN(n_steps, n_inputs, n_neurons, n_outputs)
-    model.opt = opt_func(model.parameters(), lr=lr)
-    model.loss_func = loss_func
-    return model
-
-
+class RNN_classifier(Toy_RNN):
+    
+    def accuracy(self, valid_dl):
+        x_valid, y_valid = next(iter(valid_dl))
+        preds = torch.argmax(self.forward(x_valid), dim=1)
+        return (preds == y_valid).float().mean()
+    
+    @staticmethod
+    def get_model(n_steps, n_inputs, n_neurons, n_outputs, loss_func, opt_func, lr):
+        model = RNN_classifier(n_steps, n_inputs, n_neurons, n_outputs)
+        model.opt = opt_func(model.parameters(), lr=lr)
+        model.loss_func = loss_func
+        return model
