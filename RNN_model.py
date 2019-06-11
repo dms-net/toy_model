@@ -10,6 +10,7 @@
 
 from pathlib import Path
 import requests
+from itertools import chain
 import pickle
 import gzip
 from matplotlib import pyplot as plt
@@ -24,7 +25,7 @@ import math
 
 class Toy_RNN(nn.Module):
     
-    def __init__(self, n_steps, n_inputs, n_neurons, n_outputs):
+    def __init__(self, n_steps, n_inputs, n_neurons, n_outputs, loss_func, opt_func, lr):
         super().__init__()
         
         self.n_steps = n_steps
@@ -34,6 +35,9 @@ class Toy_RNN(nn.Module):
         
         self.rnn = nn.RNN(n_inputs, n_neurons, bias=True)
         self.lin = nn.Linear(n_neurons, n_outputs, bias=False)
+        
+        self.opt = opt_func(chain(self.rnn.parameters(),self.lin.parameters()), lr=lr)
+        self.loss_func = loss_func
         
     def forward(self, x):
         # transforms x to dimensions: n_steps X batch_size X n_inputs
@@ -60,24 +64,17 @@ class Toy_RNN(nn.Module):
             print(epoch)
         return loss_array
     
-    @staticmethod
-    def get_model(n_steps, n_inputs, n_neurons, n_outputs, loss_func, opt_func, lr):
-        model = Toy_RNN(n_steps, n_inputs, n_neurons, n_outputs)
-        model.opt = opt_func(model.parameters(), lr=lr)
-        model.loss_func = loss_func
-        return model
-    
 
 class RNN_classifier(Toy_RNN):
     
     def accuracy(self, valid_dl):
         x_valid, y_valid = next(iter(valid_dl))
-        preds = torch.argmax(self.forward(x_valid), dim=1)
-        return (preds == y_valid).float().mean()
+        preds = self.forward(x_valid)
+        return torch.allclose(preds,y_valid).mean()
     
-    @staticmethod
-    def get_model(n_steps, n_inputs, n_neurons, n_outputs, loss_func, opt_func, lr):
-        model = RNN_classifier(n_steps, n_inputs, n_neurons, n_outputs)
-        model.opt = opt_func(model.parameters(), lr=lr)
-        model.loss_func = loss_func
-        return model
+class RNN_target_value(Toy_RNN):
+    
+    def accuracy(self, valid_dl, tolerance):
+        x_valid, y_valid = next(iter(valid_dl))
+        preds = torch.argmax(self.forward(x_valid), dim=1)
+        return np.mean(list(map(lambda x,y: torch.allclose(x,y,0,tolerance), preds, y_valid)))
