@@ -69,8 +69,8 @@ class RNN_classifier(Toy_RNN):
     
     def accuracy(self, valid_dl):
         x_valid, y_valid = next(iter(valid_dl))
-        preds = self.forward(x_valid)
-        return torch.allclose(preds,y_valid).mean()
+        preds = torch.argmax(self.forward(x_valid), dim=1)
+        return (preds == y_valid).float().mean()
     
 class RNN_target_value(Toy_RNN):
     
