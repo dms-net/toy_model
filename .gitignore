@@ -1,2 +1,4 @@
 # Do not copy data folder in git repository. data folder will be automatically created and populated at runtime
 data
+.ipynb_checkpoints
+__pycache__
