@@ -57,10 +57,10 @@ class Toy_RNN(nn.Module):
         for epoch in range(epochs):
             for xb,yb in train_dl:
                 loss = self.loss_func(self.forward(xb), yb)
+                loss_array[epoch] += loss
                 loss.backward()
                 self.opt.step()
                 self.opt.zero_grad()
-            loss_array[epoch] = loss
             print(epoch)
         return loss_array
     
@@ -74,7 +74,7 @@ class RNN_classifier(Toy_RNN):
     
 class RNN_target_value(Toy_RNN):
     
-    def accuracy(self, valid_dl, tolerance):
+    def accuracy(self, valid_dl, threshold):
         x_valid, y_valid = next(iter(valid_dl))
-        preds = torch.argmax(self.forward(x_valid), dim=1)
-        return np.mean(list(map(lambda x,y: torch.allclose(x,y,0,tolerance), preds, y_valid)))
+        preds = self.forward(x_valid)
+        return torch.le(torch.norm(preds-y_valid,dim=1),threshold).float().mean()
