@@ -5,14 +5,14 @@
 # 
 # Date: june 4th 2019
 # 
-# Description: 
+# Description: PyTorch custom single-layered RNN class for training on toy datasets
 ################################################
 
 from pathlib import Path
 import requests
 from itertools import chain
 import pickle
-import gzip
+import gzipf
 from matplotlib import pyplot as plt
 import numpy as np
 import torch
@@ -23,12 +23,19 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import math
 
+# General purpose single-layered RNN
 class Toy_RNN(nn.Module):
     
-    def __init__(self, n_steps, n_inputs, n_neurons, n_outputs, loss_func, opt_func, lr):
+    # Class instanciator
+    # n_inputs: number of inputs per time step
+    # n_neurons: number of neurons in the hidden layer
+    # n_outputs: number of outputs
+    # loss_func: loss function. Must be part of the torch.nn.functional library
+    # opt_func: optimizing function. Must be part of the torch.optim library
+    # lr: learning rate for the optimizing function
+    def __init__(self, n_inputs, n_neurons, n_outputs, loss_func, opt_func, lr):
         super().__init__()
         
-        self.n_steps = n_steps
         self.n_inputs = n_inputs
         self.n_neurons = n_neurons
         self.n_outputs = n_outputs
@@ -39,6 +46,9 @@ class Toy_RNN(nn.Module):
         self.opt = opt_func(chain(self.rnn.parameters(),self.lin.parameters()), lr=lr)
         self.loss_func = loss_func
         
+    # Defines a forward pass
+    # x: input tensor of shape batch_size x n_steps x n_inputs
+    # return: network output at the last time step of shape batch_size x n_outputs
     def forward(self, x):
         # transforms x to dimensions: n_steps X batch_size X n_inputs
         x = x.permute(1, 0, 2)
@@ -52,6 +62,10 @@ class Toy_RNN(nn.Module):
         
         return out.view(-1, self.n_outputs) # batch_size X n_output
     
+    # Trains the network to reach a target behavior
+    # epochs: Number of training epochs
+    # train_dl: pyTorch DataLoader object containing the training dataset in (x,y) pairs
+    # return: vector containing the total loss per training epoch
     def fit(self, epochs, train_dl):
         loss_array=np.zeros(epochs)
         for epoch in range(epochs):
@@ -64,16 +78,24 @@ class Toy_RNN(nn.Module):
             print(epoch)
         return loss_array
     
-
+# Single-layered RNN for classification tasks
 class RNN_classifier(Toy_RNN):
     
+    # Network accuracy testing with human-readable output
+    # valid_dl: pyTorch DataLoader object containing the testing dataset in (x,y) pairs
+    # return: proportion of times when the network accurately predicted the class of the input (where the predicted class is the class that matched with highest confidence)
     def accuracy(self, valid_dl):
         x_valid, y_valid = next(iter(valid_dl))
         preds = torch.argmax(self.forward(x_valid), dim=1)
         return (preds == y_valid).float().mean()
     
+# Single-layered RNN for target-value matching task
 class RNN_target_value(Toy_RNN):
     
+    # Network accuracy testing with human-readable output
+    # valid_dl: pyTorch DataLoader object containing the testing dataset in (x,y) pairs
+    # threshold: tolerance threshold for difference between actual and expected output
+    # return: proportion of times when the network accurately matched the expected output (norm of difference between predicted and expected vectors smaller than threshold)
     def accuracy(self, valid_dl, threshold):
         x_valid, y_valid = next(iter(valid_dl))
         preds = self.forward(x_valid)
