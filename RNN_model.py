@@ -12,7 +12,7 @@ from pathlib import Path
 import requests
 from itertools import chain
 import pickle
-import gzipf
+import gzip
 from matplotlib import pyplot as plt
 import numpy as np
 import torch
@@ -47,37 +47,73 @@ class Toy_RNN(nn.Module):
         self.loss_func = loss_func
         
     # Defines a forward pass
-    # x: input tensor of shape batch_size x n_steps x n_inputs
+    # x: input tensor of shape batch_size x n_inputs x n_inputs
     # return: network output at the last time step of shape batch_size x n_outputs
+    #         all_hidden: hidden states of the RNN layer computed for every input in the given batch (including the final output of the RNN layer)
     def forward(self, x):
-        # transforms x to dimensions: n_steps X batch_size X n_inputs
+        # transforms x to dimensions: n_inputs X batch_size X n_inputs
         x = x.permute(1, 0, 2)
         
         batch_size = x.size(1)
         self.hidden = torch.zeros(1, batch_size, self.n_neurons)
-        
-        rnn_out, self.hidden = self.rnn(x, self.hidden)
+
+        all_hidden, self.hidden = self.rnn(x, self.hidden)
+        # hidden are the hidden states on the last element of each input, aka the final output of the RNN layer
+        # all_hidden contains the hidden states for every element of each input, self.hidden is the last element of all_hidden
+        # index: #28 seq_len, 2000 examples in each batch (batch_size), 200 neurons (the last 200 are in tensor, rest is list)
         
         out = self.lin(self.hidden)
         
-        return out.view(-1, self.n_outputs) # batch_size X n_output
-    
+        return out.view(-1, self.n_outputs), all_hidden  #batch_size X n_output
+
     # Trains the network to reach a target behavior
     # epochs: Number of training epochs
     # train_dl: pyTorch DataLoader object containing the training dataset in (x,y) pairs
-    # return: vector containing the total loss per training epoch
-    def fit(self, epochs, train_dl):
+    # return: vector containing the total loss per training epoch, list
+    def fit(self, epochs, train_dl,valid_dl):
+        
+        parameters = list(self.get_params())
+        hidden_states = list()
         loss_array=np.zeros(epochs)
+
         for epoch in range(epochs):
+            epoch_parameters= list()
+            epoch_states = list()
+            
+
             for xb,yb in train_dl:
-                loss = self.loss_func(self.forward(xb), yb)
+
+                self.opt.zero_grad()
+                prediction, batch_states = self.forward(xb)
+                loss = self.loss_func(prediction, yb)
                 loss_array[epoch] += loss
                 loss.backward()
                 self.opt.step()
-                self.opt.zero_grad()
-            print(epoch)
-        return loss_array
+
+                epoch_parameters.append(self.get_params())
+                epoch_states.append(batch_states)
+            
+            parameters.append(epoch_parameters)
+            hidden_states.append(epoch_states)
+            
+            print('Epoch: ' , epoch)
+            print('Accuracy: ' , self.accuracy(valid_dl).item())
+        
+        return loss_array, parameters, hidden_states
     
+    # Returns the network's parameters
+    # parameters is a list indexed by: # epoch, #batch, # layer (0: input, 1: hidden, 2: output)
+    # each layer is a numpy array of dimensions: 
+    # input: (# neurons, input_size), hidden: (# neurons, # neurons), output: (n_output, # neurons)
+    # see torch.nn.RNN ~variables for more details
+    # in general 1st index defines where the connexion is going (output node) and the 2nd index
+    # defines where the connexion is comming from (input node)
+    def get_params(self):
+        input_weights = self.rnn.weight_ih_l0.data.numpy()
+        hidden_weights = self.rnn.weight_hh_l0.data.numpy()
+        output_weights = self.lin.weight.data.numpy()
+        return input_weights, hidden_weights, output_weights
+
 # Single-layered RNN for classification tasks
 class RNN_classifier(Toy_RNN):
     
@@ -86,7 +122,7 @@ class RNN_classifier(Toy_RNN):
     # return: proportion of times when the network accurately predicted the class of the input (where the predicted class is the class that matched with highest confidence)
     def accuracy(self, valid_dl):
         x_valid, y_valid = next(iter(valid_dl))
-        preds = torch.argmax(self.forward(x_valid), dim=1)
+        preds = torch.argmax(self.forward(x_valid)[0], dim=1)
         return (preds == y_valid).float().mean()
     
 # Single-layered RNN for target-value matching task
@@ -98,5 +134,5 @@ class RNN_target_value(Toy_RNN):
     # return: proportion of times when the network accurately matched the expected output (norm of difference between predicted and expected vectors smaller than threshold)
     def accuracy(self, valid_dl, threshold):
         x_valid, y_valid = next(iter(valid_dl))
-        preds = self.forward(x_valid)
+        preds = self.forward(x_valid)[0]
         return torch.le(torch.norm(preds-y_valid,dim=1),threshold).float().mean()
